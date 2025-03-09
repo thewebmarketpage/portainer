@@ -1,4 +1,4 @@
-name: Install Portainer with Nginx Proxy
+name: Install Portainer with Nginx Proxy (giantwebmarket.com)
 
 on:
   push:
@@ -14,7 +14,63 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Run Portainer Installation Script
+      - name: Install Docker (if not installed)
         run: |
-          cd portainer
-          bash install.sh
+          if ! command -v docker &> /dev/null; then
+            sudo apt update
+            sudo apt install -y docker.io
+            sudo systemctl enable --now docker
+          fi
+
+      - name: Install Nginx (if not installed)
+        run: |
+          if ! command -v nginx &> /dev/null; then
+            sudo apt install -y nginx
+            sudo systemctl enable --now nginx
+          fi
+
+      - name: Install Certbot for SSL
+        run: |
+          sudo apt install -y certbot python3-certbot-nginx
+
+      - name: Run Portainer in Docker
+        run: |
+          docker volume create portainer_data
+          docker run -d \
+            -p 9000:9000 \
+            --name portainer \
+            --restart always \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v portainer_data:/data \
+            portainer/portainer-ce
+
+      - name: Configure Nginx Reverse Proxy for giantwebmarket.com
+        run: |
+          echo "Setting up Nginx for Portainer at giantwebmarket.com..."
+          sudo tee /etc/nginx/sites-available/portainer <<EOF
+          server {
+              listen 80;
+              server_name giantwebmarket.com www.giantwebmarket.com;
+
+              location /portainer/ {
+                  proxy_pass http://localhost:9000/;
+                  proxy_set_header Host \$host;
+                  proxy_set_header X-Real-IP \$remote_addr;
+                  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto \$scheme;
+                  rewrite ^/portainer(/.*) \$1 break;
+              }
+          }
+          EOF
+
+          sudo ln -sf /etc/nginx/sites-available/portainer /etc/nginx/sites-enabled/
+          sudo systemctl restart nginx
+
+      - name: Obtain SSL Certificate for giantwebmarket.com
+        run: |
+          sudo certbot --nginx -d giantwebmarket.com -d www.giantwebmarket.com --non-interactive --agree-tos -m admin@giantwebmarket.com
+
+      - name: Reload Nginx with SSL
+        run: |
+          sudo systemctl reload nginx
+          echo "Portainer is now accessible at https://giantwebmarket.com/portainer/"
