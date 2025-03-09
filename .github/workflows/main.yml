@@ -1,0 +1,20 @@
+name: Install Portainer with Nginx Proxy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: self-hosted
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run Portainer Installation Script
+        run: |
+          cd portainer
+          bash install.sh
